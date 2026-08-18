@@ -7,7 +7,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.alam.payment.entity.Payment;
+import com.alam.payment.event.PaymentCreatedEvent;
 import com.alam.payment.exception.PaymentNotFoundException;
+import com.alam.payment.kafka.PaymentEventProducer;
 import com.alam.payment.repository.PaymentRepository;
 import com.alam.payment.request.dto.CreatePaymentRequest;
 import com.alam.payment.response.dto.PaymentResponse;
@@ -21,6 +23,7 @@ public class PaymentService {
 
 	private final PaymentRepository paymentRepository;
 	private final IdempotencyService idempotencyService;
+	private final PaymentEventProducer paymentEventProducer;
 
 	@Transactional
 	public PaymentResponse createPayment(CreatePaymentRequest request) {
@@ -70,6 +73,14 @@ public class PaymentService {
 
 		idempotencyService.saveResponse(request.idempotencyKey(), response);
 
+		 /*
+	     * 5. Publish Kafka event.
+	     */
+
+			PaymentCreatedEvent event = new PaymentCreatedEvent(savedPayment.getId(), savedPayment.getCustomerId(),
+					savedPayment.getAmount(), savedPayment.getCurrency(), savedPayment.getIdempotencyKey());
+
+			paymentEventProducer.publishPaymentCreated(event);
 		return response;
 	}
 
