@@ -5,7 +5,6 @@ import com.alam.payment.service.PaymentProcessingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -16,25 +15,12 @@ public class PaymentEventConsumer {
 	private final PaymentProcessingService paymentProcessingService;
 
 	@KafkaListener(topics = "payment-created", groupId = "payment-processing-group")
-	public void consumePaymentCreated(PaymentCreatedEvent event, Acknowledgment acknowledgment) {
+	public void consumePaymentCreated(PaymentCreatedEvent event) {
 
 		log.info("Received payment event: {}", event.paymentId());
 
-		try {
+		paymentProcessingService.processPayment(event);
 
-			paymentProcessingService.processPayment(event);
-
-			acknowledgment.acknowledge();
-
-		} catch (Exception exception) {
-
-			log.error("Payment processing failed: {}", event.paymentId(), exception);
-
-			/*
-			 * Don't acknowledge.
-			 *
-			 * Kafka can redeliver the message.
-			 */
-		}
+		log.info("Payment event processed: {}", event.paymentId());
 	}
 }

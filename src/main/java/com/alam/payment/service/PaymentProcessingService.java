@@ -3,6 +3,7 @@ package com.alam.payment.service;
 import com.alam.payment.entity.Payment;
 import com.alam.payment.entity.PaymentStatus;
 import com.alam.payment.event.PaymentCreatedEvent;
+import com.alam.payment.exception.InvalidPaymentStateException;
 import com.alam.payment.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,47 +17,68 @@ public class PaymentProcessingService {
 
 	private final PaymentRepository paymentRepository;
 
+	private final PaymentStateMachine paymentStateMachine;
+
 	@Transactional
 	public void processPayment(PaymentCreatedEvent event) {
 
-		Payment payment = paymentRepository.findById(event.paymentId()).orElse(null);
+		Payment payment = paymentRepository.findById(event.paymentId())
+				.orElseThrow(() -> new RuntimeException("Payment not found: " + event.paymentId()));
 
-		if (payment == null) {
+		/*
+		 * Idempotency protection.
+		 *
+		 * If payment has already reached a final state, don't process it again.
+		 */
 
-			log.error("Payment not found: {}", event.paymentId());
+		if (payment.getStatus() == PaymentStatus.SUCCESS || payment.getStatus() == PaymentStatus.FAILED) {
+
+			log.info("Payment {} already processed with status {}", payment.getId(), payment.getStatus());
 
 			return;
 		}
 
 		/*
-		 * Move payment to PROCESSING.
+		 * PENDING → PROCESSING
 		 */
 
-		payment.setStatus(PaymentStatus.PROCESSING);
+		changeStatus(payment, PaymentStatus.PROCESSING);
 
 		paymentRepository.save(payment);
 
-		log.info("Payment {} moved to PROCESSING", event.paymentId());
+		log.info("Payment {} moved to PROCESSING", payment.getId());
 
 		/*
 		 * Simulate payment processing.
+		 *
+		 * Later this will call an external payment gateway.
 		 */
 
 		boolean successful = true;
 
 		if (successful) {
 
-			payment.setStatus(PaymentStatus.SUCCESS);
-
-			log.info("Payment {} completed successfully", event.paymentId());
+			changeStatus(payment, PaymentStatus.SUCCESS);
 
 		} else {
 
-			payment.setStatus(PaymentStatus.FAILED);
-
-			log.error("Payment {} failed", event.paymentId());
+			changeStatus(payment, PaymentStatus.FAILED);
 		}
 
 		paymentRepository.save(payment);
+
+		log.info("Payment {} completed with status {}", payment.getId(), payment.getStatus());
+	}
+
+	private void changeStatus(Payment payment, PaymentStatus nextStatus) {
+
+		PaymentStatus currentStatus = payment.getStatus();
+
+		if (!paymentStateMachine.isValidTransition(currentStatus, nextStatus)) {
+
+			throw new InvalidPaymentStateException(currentStatus, nextStatus);
+		}
+
+		payment.setStatus(nextStatus);
 	}
 }

@@ -23,13 +23,13 @@ public class PaymentService {
 
 	private final PaymentRepository paymentRepository;
 	private final IdempotencyService idempotencyService;
-	private final PaymentEventProducer paymentEventProducer;
-
+	private final OutboxService outboxService;
+	
 	@Transactional
 	public PaymentResponse createPayment(CreatePaymentRequest request) {
 
 		/*
-		 * 1. Check Redis first.
+		 * 1. Check Redis.
 		 */
 
 		Object cachedResponse = idempotencyService.getExistingResponse(request.idempotencyKey());
@@ -41,8 +41,6 @@ public class PaymentService {
 
 		/*
 		 * 2. Check PostgreSQL.
-		 *
-		 * This protects us if the Redis entry has expired or Redis was restarted.
 		 */
 
 		Payment existingPayment = paymentRepository.findByIdempotencyKey(request.idempotencyKey()).orElse(null);
@@ -57,7 +55,7 @@ public class PaymentService {
 		}
 
 		/*
-		 * 3. Create payment.
+		 * 3. Create Payment.
 		 */
 
 		Payment payment = Payment.builder().customerId(request.customerId()).amount(request.amount())
@@ -68,19 +66,24 @@ public class PaymentService {
 		PaymentResponse response = toResponse(savedPayment);
 
 		/*
-		 * 4. Store response in Redis.
+		 * 4. Create Kafka event.
+		 */
+
+		PaymentCreatedEvent event = new PaymentCreatedEvent(savedPayment.getId(), savedPayment.getCustomerId(),
+				savedPayment.getAmount(), savedPayment.getCurrency(), savedPayment.getIdempotencyKey());
+
+		/*
+		 * 5. Store event in Outbox.
+		 */
+
+		outboxService.createPaymentCreatedEvent(event);
+
+		/*
+		 * 6. Cache response.
 		 */
 
 		idempotencyService.saveResponse(request.idempotencyKey(), response);
 
-		 /*
-	     * 5. Publish Kafka event.
-	     */
-
-			PaymentCreatedEvent event = new PaymentCreatedEvent(savedPayment.getId(), savedPayment.getCustomerId(),
-					savedPayment.getAmount(), savedPayment.getCurrency(), savedPayment.getIdempotencyKey());
-
-			paymentEventProducer.publishPaymentCreated(event);
 		return response;
 	}
 
