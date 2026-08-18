@@ -71,7 +71,19 @@ jobs:
           restore-keys: ${{ runner.os }}-m2
 
       - name: Build with Maven (skip tests)
-        run: ./mvnw clean package -DskipTests
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/payment_db
+          SPRING_DATASOURCE_USERNAME: postgres
+          SPRING_DATASOURCE_PASSWORD: admin
+          SPRING_DATA_REDIS_HOST: localhost
+          SPRING_DATA_REDIS_PORT: 6379
+          SPRING_KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+          SPRING_KAFKA_CONSUMER_GROUP_ID: payment-group
+          SPRING_KAFKA_CONSUMER_AUTO_OFFSET_RESET: earliest
+          SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: ""
+        run: |
+          chmod +x mvnw
+          ./mvnw clean package -DskipTests
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
