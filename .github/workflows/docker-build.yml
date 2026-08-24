@@ -83,7 +83,7 @@ jobs:
       # -----------------------------------
 
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
 
       # -----------------------------------
@@ -91,7 +91,7 @@ jobs:
       # -----------------------------------
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -115,6 +115,8 @@ jobs:
           SPRING_KAFKA_CONSUMER_GROUP_ID: payment-group
           SPRING_KAFKA_CONSUMER_AUTO_OFFSET_RESET: earliest
 
+          GROQ_API_KEY: test-key
+
         run: |
           chmod +x mvnw
           ./mvnw clean package -DskipTests
@@ -125,7 +127,7 @@ jobs:
       # -----------------------------------
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@v3
 
 
       # -----------------------------------
@@ -145,41 +147,61 @@ jobs:
       # -----------------------------------
 
       - name: Build and Push Docker Image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
-
+          push: ${{ github.event_name == 'push' }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/payment-platform:latest
             ghcr.io/${{ github.repository_owner }}/payment-platform:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-# -------------------------
-      # Upload Docker image
+
+      # -------------------------
+      # 7. Save Docker image to tar then upload artifact
       # -------------------------
 
+      - name: Save Docker image to tar
+        run: |
+          docker save ghcr.io/${{ github.repository_owner }}/payment-platform:latest \
+            -o /tmp/payment-platform.tar
+
       - name: Upload Docker image
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v4
         with:
           name: payment-platform-docker-image
           path: /tmp/payment-platform.tar
           retention-days: 7
 
-- name: Start Spring Boot application
-  run: |
-    nohup java -jar target/*.jar > app.log 2>&1 &
 
-- name: Wait for application
-  run: |
-    for i in {1..30}; do
-      if curl -f http://localhost:8080/actuator/health; then
-        echo "Application is healthy!"
-        exit 0
-      fi
-      echo "Waiting for application..."
-      sleep 2
-    done
+      # -------------------------
+      # 8. Start Spring Boot application (smoke test)
+      # -------------------------
 
-    echo "Application failed to start"
-    cat app.log
-    exit 1
+      - name: Start Spring Boot application
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/payment_db
+          SPRING_DATASOURCE_USERNAME: postgres
+          SPRING_DATASOURCE_PASSWORD: admin
+          SPRING_DATA_REDIS_HOST: localhost
+          SPRING_DATA_REDIS_PORT: 6379
+          SPRING_KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+          GROQ_API_KEY: test-key
+        run: |
+          nohup java -jar target/*.jar > app.log 2>&1 &
+
+      - name: Wait for application
+        run: |
+          for i in {1..30}; do
+            if curl -f http://localhost:8080/actuator/health; then
+              echo "Application is healthy!"
+              exit 0
+            fi
+            echo "Waiting for application..."
+            sleep 2
+          done
+
+          echo "Application failed to start"
+          cat app.log
+          exit 1
