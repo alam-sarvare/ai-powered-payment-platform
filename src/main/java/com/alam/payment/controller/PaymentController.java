@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.alam.payment.ai.PaymentRiskResponse;
 import com.alam.payment.request.dto.CreatePaymentRequest;
 import com.alam.payment.response.dto.PaymentResponse;
 import com.alam.payment.response.dto.UpdatePaymentStatusRequest;
@@ -28,32 +29,35 @@ import lombok.RequiredArgsConstructor;
 public class PaymentController {
 	private final PaymentService paymentService;
 
-    @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    public PaymentResponse createPayment(
-            @Valid @RequestBody CreatePaymentRequest request) {
+	@PostMapping
+	@ResponseStatus(HttpStatus.CREATED)
+	public PaymentResponse createPayment(@Valid @RequestBody CreatePaymentRequest request) {
 
-        return paymentService.createPayment(request);
-    }
+		return paymentService.createPayment(request);
+	}
 
-    @GetMapping("/{paymentId}")
-    public PaymentResponse getPayment(@PathVariable UUID paymentId) {
+	@GetMapping("/{paymentId}")
+	public PaymentResponse getPayment(@PathVariable UUID paymentId) {
 
-        return paymentService.getPayment(paymentId);
-    }
+		return paymentService.getPayment(paymentId);
+	}
 
-    @GetMapping
-    public List<PaymentResponse> getPaymentsByCustomer(@RequestParam String customerId) {
+	@GetMapping
+	public List<PaymentResponse> getPaymentsByCustomer(@RequestParam String customerId) {
 
-        return paymentService.getPaymentsByCustomer(customerId);
-    }
-    
-    @PatchMapping("/{paymentId}/status")
-    public PaymentResponse updateStatus(@PathVariable UUID paymentId,
-            @Valid @RequestBody UpdatePaymentStatusRequest request) {
+		return paymentService.getPaymentsByCustomer(customerId);
+	}
 
-        return paymentService.updateStatus(paymentId,request
-        );
-    }
+	@PatchMapping("/{paymentId}/status")
+	public PaymentResponse updateStatus(@PathVariable UUID paymentId,
+			@Valid @RequestBody UpdatePaymentStatusRequest request) {
 
+		return paymentService.updateStatus(paymentId, request);
+	}
+
+	@GetMapping("/{paymentId}/risk")
+	public PaymentRiskResponse getPaymentRisk(@PathVariable UUID paymentId) {
+
+		return paymentService.getRisk(paymentId);
+	}
 }

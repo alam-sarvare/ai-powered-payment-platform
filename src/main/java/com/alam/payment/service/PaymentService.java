@@ -6,10 +6,15 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.alam.payment.ai.PaymentRiskCache;
+import com.alam.payment.ai.PaymentRiskResponse;
+import com.alam.payment.config.PaymentMetrics;
 import com.alam.payment.entity.Payment;
 import com.alam.payment.event.PaymentCreatedEvent;
+import com.alam.payment.event.PaymentRiskAnalysisEvent;
 import com.alam.payment.exception.PaymentNotFoundException;
 import com.alam.payment.kafka.PaymentEventProducer;
+import com.alam.payment.kafka.PaymentRiskProducer;
 import com.alam.payment.repository.PaymentRepository;
 import com.alam.payment.request.dto.CreatePaymentRequest;
 import com.alam.payment.response.dto.PaymentResponse;
@@ -24,7 +29,10 @@ public class PaymentService {
 	private final PaymentRepository paymentRepository;
 	private final IdempotencyService idempotencyService;
 	private final OutboxService outboxService;
-	
+	private final PaymentRiskProducer paymentRiskProducer;
+	private final PaymentRiskCache paymentRiskCache;
+	private final PaymentMetrics paymentMetrics;
+
 	@Transactional
 	public PaymentResponse createPayment(CreatePaymentRequest request) {
 
@@ -63,20 +71,27 @@ public class PaymentService {
 
 		Payment savedPayment = paymentRepository.save(payment);
 
+		PaymentRiskAnalysisEvent event = new PaymentRiskAnalysisEvent(savedPayment.getId(),
+				savedPayment.getCustomerId(), savedPayment.getAmount(), savedPayment.getCurrency(), "PAYMENT",
+				"Payment transaction");
+
+		paymentRiskProducer.publish(event);
+
 		PaymentResponse response = toResponse(savedPayment);
+		paymentMetrics.paymentCreated();
 
 		/*
 		 * 4. Create Kafka event.
 		 */
 
-		PaymentCreatedEvent event = new PaymentCreatedEvent(savedPayment.getId(), savedPayment.getCustomerId(),
+		PaymentCreatedEvent event1 = new PaymentCreatedEvent(savedPayment.getId(), savedPayment.getCustomerId(),
 				savedPayment.getAmount(), savedPayment.getCurrency(), savedPayment.getIdempotencyKey());
 
 		/*
 		 * 5. Store event in Outbox.
 		 */
 
-		outboxService.createPaymentCreatedEvent(event);
+		outboxService.createPaymentCreatedEvent(event1);
 
 		/*
 		 * 6. Cache response.
@@ -119,5 +134,36 @@ public class PaymentService {
 
 		return new PaymentResponse(payment.getId(), payment.getCustomerId(), payment.getAmount(), payment.getCurrency(),
 				payment.getStatus(), payment.getCreatedAt(), payment.getUpdatedAt());
+	}
+
+	public PaymentRiskResponse getRisk(UUID paymentId) {
+
+		// 1. Check Redis
+
+		PaymentRiskResponse cached = paymentRiskCache.get(paymentId);
+
+		if (cached != null) {
+
+			return cached;
+		}
+
+		// 2. If Redis miss, check DB
+
+		Payment payment = paymentRepository.findById(paymentId)
+				.orElseThrow(() -> new PaymentNotFoundException(paymentId));
+
+		if (payment.getRiskLevel() == null) {
+			// Risk analysis is still pending — surface a 404 so callers can retry
+			throw new PaymentNotFoundException(paymentId,
+					"Risk analysis not yet available for payment " + paymentId);
+		}
+
+		PaymentRiskResponse response = new PaymentRiskResponse(payment.getRiskLevel(), payment.getRiskReason());
+
+		// 3. Populate Redis
+
+		paymentRiskCache.save(paymentId, response);
+
+		return response;
 	}
 }

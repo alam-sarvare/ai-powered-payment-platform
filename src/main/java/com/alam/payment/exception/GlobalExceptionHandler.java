@@ -49,4 +49,28 @@ public class GlobalExceptionHandler {
 
 		return ResponseEntity.badRequest().body(exception.getMessage());
 	}
+
+	@ExceptionHandler(DuplicatePaymentException.class)
+	public ResponseEntity<Map<String, Object>> handleDuplicate(DuplicatePaymentException ex) {
+
+		Map<String, Object> response = new HashMap<>();
+		response.put("timestamp", LocalDateTime.now());
+		response.put("status", 409);
+		response.put("error", "DUPLICATE_PAYMENT");
+		response.put("message", ex.getMessage());
+
+		return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+	}
+
+	@ExceptionHandler(RuntimeException.class)
+	public ResponseEntity<Map<String, Object>> handleRuntimeException(RuntimeException ex) {
+
+		Map<String, Object> response = new HashMap<>();
+		response.put("timestamp", LocalDateTime.now());
+		response.put("status", 500);
+		response.put("error", "INTERNAL_ERROR");
+		response.put("message", ex.getMessage());
+
+		return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+	}
 }

@@ -4,6 +4,8 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+import com.alam.payment.ai.RiskLevel;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -59,11 +61,19 @@ public class Payment {
     @Column(name = "idempotency_key", nullable = false, unique = true)
     private String idempotencyKey;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "risk_level")
+    private RiskLevel riskLevel;
+
+    @Column(name = "risk_reason", length = 1000)
+    private String riskReason;
+    
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+   
     
     // Lifecycle callback methods to automatically set timestamps and default status
     @PrePersist
